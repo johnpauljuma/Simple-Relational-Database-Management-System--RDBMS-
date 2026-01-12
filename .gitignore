@@ -2,6 +2,8 @@
 venv/
 env/
 .env
+/data
+web-ui/data/
 
 # Ignore Python cache files (speeds up your code)
 __pycache__/
