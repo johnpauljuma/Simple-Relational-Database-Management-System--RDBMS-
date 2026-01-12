@@ -1,7 +1,7 @@
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 class Table:
-    def __init__(self, name: str, columns: List[Dict]):
+    def __init__(self, name: str, columns: List[Dict[str, Any]]):
         self.name = name
         self.columns = columns
         self.data = []
