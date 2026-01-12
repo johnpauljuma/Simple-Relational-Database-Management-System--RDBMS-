@@ -10,7 +10,3 @@ __pycache__/
 # Ignore database files (usually better to keep local)
 *.sqlite3
 *.db
-/web-ui/data/
-data/
-schema.json
-meta.json
