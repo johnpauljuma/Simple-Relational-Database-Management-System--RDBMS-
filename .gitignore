@@ -1,0 +1,11 @@
+# Ignore the virtual environment
+venv/
+env/
+.env
+
+# Ignore Python cache files (speeds up your code)
+__pycache__/
+*.py[cod]
+
+# Ignore database files (usually better to keep local)
+*.sqlite3
