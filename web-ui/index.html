@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MyRDBMS - Database Manager</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1><i class="fas fa-database"></i> MyRDBMS</h1>
+            <div class="connection-status">
+                <span class="status-dot connected"></span>
+                <span>Connected</span>
+            </div>
+        </header>
+
+        <div class="main-layout">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <div class="sidebar-section">
+                    <h3><i class="fas fa-database"></i> Databases</h3>
+                    <button class="btn btn-primary" onclick="createDatabase()">
+                        <i class="fas fa-plus"></i> New Database
+                    </button>
+                    <div id="database-list" class="tree-view">
+                        <!-- Databases will be loaded here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="main-content">
+                <div class="tabs">
+                    <button class="tab active" onclick="switchTab('query')">Query Editor</button>
+                    <button class="tab" onclick="switchTab('data')">Table Data</button>
+                    <button class="tab" onclick="switchTab('schema')">Schema</button>
+                </div>
+
+                <!-- Query Tab -->
+                <div id="query-tab" class="tab-content active">
+                    <div class="sql-editor">
+                        <textarea id="query-input" placeholder="Enter SQL query here...">
+CREATE TABLE users (
+    id INT PRIMARY KEY,
+    name VARCHAR(50),
+    email VARCHAR(100) UNIQUE,
+    age INT
+);
+
+INSERT INTO users VALUES (1, 'John Doe', 'john@example.com', 30);
+INSERT INTO users VALUES (2, 'Jane Smith', 'jane@example.com', 25);
+
+SELECT * FROM users;</textarea>
+                        <div class="editor-actions">
+                            <button class="btn btn-success" onclick="executeQuery()">
+                                <i class="fas fa-play"></i> Execute
+                            </button>
+                            <button class="btn" onclick="clearQuery()">
+                                <i class="fas fa-trash"></i> Clear
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="results">
+                        <h3>Results</h3>
+                        <div id="results-container">
+                            <p class="placeholder">Execute a query to see results...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Data Tab -->
+                <div id="data-tab" class="tab-content">
+                    <div class="data-header">
+                        <h3 id="table-name">No table selected</h3>
+                        <button class="btn btn-success" onclick="insertRow()">
+                            <i class="fas fa-plus"></i> Insert Row
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table id="data-table">
+                            <thead>
+                                <!-- Columns will be loaded here -->
+                            </thead>
+                            <tbody>
+                                <!-- Data will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Schema Tab -->
+                <div id="schema-tab" class="tab-content">
+                    <div class="schema-header">
+                        <h3 id="schema-table-name">No table selected</h3>
+                        <button class="btn btn-primary" onclick="createTable()">
+                            <i class="fas fa-plus"></i> Create Table
+                        </button>
+                    </div>
+                    <div class="schema-container">
+                        <table id="schema-table">
+                            <thead>
+                                <tr>
+                                    <th>Column Name</th>
+                                    <th>Data Type</th>
+                                    <th>Constraints</th>
+                                    <th>Nullable</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Schema will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer>
+            <div id="status-message">Ready</div>
+            <div id="execution-time"></div>
+        </footer>
+    </div>
+
+    <!-- Modals -->
+    <div id="create-database-modal" class="modal">
+        <div class="modal-content">
+            <h3>Create New Database</h3>
+            <input type="text" id="new-db-name" placeholder="Enter database name">
+            <div class="modal-actions">
+                <button class="btn btn-success" onclick="confirmCreateDatabase()">Create</button>
+                <button class="btn" onclick="closeModal('create-database-modal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="create-table-modal" class="modal">
+        <div class="modal-content">
+            <h3>Create New Table</h3>
+            <input type="text" id="new-table-name" placeholder="Table name">
+            <div id="columns-container">
+                <div class="column-definition">
+                    <input type="text" placeholder="Column name" class="col-name">
+                    <select class="col-type">
+                        <option value="INT">INT</option>
+                        <option value="VARCHAR(50)">VARCHAR(50)</option>
+                        <option value="TEXT">TEXT</option>
+                        <option value="BOOLEAN">BOOLEAN</option>
+                        <option value="DECIMAL">DECIMAL</option>
+                    </select>
+                    <label><input type="checkbox" class="col-pk"> PK</label>
+                    <label><input type="checkbox" class="col-unique"> Unique</label>
+                    <label><input type="checkbox" class="col-nullable"> Nullable</label>
+                    <button class="btn btn-danger btn-small" onclick="removeColumn(this)">×</button>
+                </div>
+            </div>
+            <button class="btn" onclick="addColumn()"><i class="fas fa-plus"></i> Add Column</button>
+            <div class="modal-actions">
+                <button class="btn btn-success" onclick="confirmCreateTable()">Create Table</button>
+                <button class="btn" onclick="closeModal('create-table-modal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
