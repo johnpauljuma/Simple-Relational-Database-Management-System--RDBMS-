@@ -1,6 +1,7 @@
 // Global state
 let currentDatabase = null;
 let currentTable = null;
+let activeDatabaseElement = null;
 const API_BASE = 'http://localhost:5000/api';
 
 // Initialize the application
@@ -33,15 +34,19 @@ function renderDatabaseList(databases) {
             <i class="fas fa-database"></i>
             <span>${db}</span>
         `;
-        
-        dbElement.onclick = () => selectDatabase(db);
+
+        dbElement.addEventListener('click', async (event) => {
+            await selectDatabase(event, db);
+        });
+
         container.appendChild(dbElement);
     });
 }
 
 // Select a database
-async function selectDatabase(dbName) {
+async function selectDatabase(event, dbName) {
     currentDatabase = dbName;
+    activeDatabaseElement = event.currentTarget;
     
     // Update UI
     document.querySelectorAll('.database-item').forEach(el => {
@@ -67,18 +72,18 @@ async function loadTables(dbName) {
 
 // Render table list
 function renderTableList(dbName, tables) {
-    // Find or create tables list for this database
-    let dbItem = event.currentTarget;
-    let tablesList = dbItem.querySelector('.tables-list');
-    
+    if (!activeDatabaseElement) return;
+
+    let tablesList = activeDatabaseElement.querySelector('.tables-list');
+
     if (!tablesList) {
         tablesList = document.createElement('div');
         tablesList.className = 'tables-list';
-        dbItem.appendChild(tablesList);
+        activeDatabaseElement.appendChild(tablesList);
     }
-    
+
     tablesList.innerHTML = '';
-    
+
     tables.forEach(table => {
         const tableElement = document.createElement('div');
         tableElement.className = 'table-item';
@@ -86,12 +91,12 @@ function renderTableList(dbName, tables) {
             <i class="fas fa-table"></i>
             <span>${table}</span>
         `;
-        
-        tableElement.onclick = (e) => {
-            e.stopPropagation();
-            selectTable(dbName, table);
-        };
-        
+
+        tableElement.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            await selectTable(dbName, table);
+        });
+
         tablesList.appendChild(tableElement);
     });
 }
@@ -100,20 +105,33 @@ function renderTableList(dbName, tables) {
 async function selectTable(dbName, tableName) {
     currentTable = tableName;
     
-    // Update UI
+    // Update UI - highlight selected table
     document.querySelectorAll('.table-item').forEach(el => {
         el.classList.remove('active');
     });
-    event.currentTarget.classList.add('active');
+    
+    // Find and activate the clicked table
+    const tableItems = document.querySelectorAll('.table-item');
+    for (const item of tableItems) {
+        const span = item.querySelector('span');
+        if (span && span.textContent === tableName) {
+            item.classList.add('active');
+            break;
+        }
+    }
     
     // Update table name in tabs
     document.getElementById('table-name').textContent = `Table: ${tableName}`;
     document.getElementById('schema-table-name').textContent = `Schema: ${tableName}`;
     
-    // Switch to data tab and load data
-    switchTab('data');
+    // Load table data
     await loadTableData(dbName, tableName);
+    
+    // Also load schema (optional)
     await loadTableSchema(dbName, tableName);
+    
+    // Switch to data tab
+    switchTab('data');
     
     setStatus(`Selected table: ${tableName}`);
 }
@@ -121,16 +139,46 @@ async function selectTable(dbName, tableName) {
 // Load table data
 async function loadTableData(dbName, tableName) {
     try {
-        const response = await fetch(`${API_BASE}/databases/${dbName}/tables/${tableName}/data`);
+        console.log(`Loading data for ${dbName}.${tableName}`);
+        
+        // First, try to get data via API if you have an endpoint
+        // If not, execute a SELECT query
+        const response = await fetch(`${API_BASE}/databases/${dbName}/execute`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+                query: `SELECT * FROM ${tableName}`
+            })
+        });
+        
         const data = await response.json();
-        renderTableData(data.rows);
+        
+        if (data.error) {
+            showError(`Error loading table data: ${data.error}`);
+            renderEmptyTable();
+        } else {
+            renderTableData(data);
+        }
+        
     } catch (error) {
-        console.error(error);
+        console.error(`Error loading table data:`, error);
+        showError(`Failed to load table data: ${error.message}`);
+        
+        // Fallback: Try alternative endpoint
+        try {
+            const altResponse = await fetch(`${API_BASE}/databases/${dbName}/tables/${tableName}/data`);
+            const altData = await altResponse.json();
+            renderTableData(altData);
+        } catch (fallbackError) {
+            renderEmptyTable();
+        }
     }
 }
 
 // Render table data
-function renderTableData(rows) {
+function renderTableData(data) {
     const table = document.getElementById('data-table');
     const thead = table.querySelector('thead');
     const tbody = table.querySelector('tbody');
@@ -139,31 +187,87 @@ function renderTableData(rows) {
     thead.innerHTML = '';
     tbody.innerHTML = '';
     
+    // Check if we have data
+    let rows = data.rows || [];
+    let columns = data.columns || [];
+    
     if (rows.length === 0) {
+        // No data - show empty message
         const row = tbody.insertRow();
         const cell = row.insertCell();
         cell.colSpan = 1;
-        cell.textContent = 'No data found';
+        cell.textContent = 'No data found in table';
         cell.className = 'placeholder';
+        cell.style.textAlign = 'center';
+        cell.style.padding = '2rem';
         return;
     }
     
-    // Create header
+    // Create header from columns or first row keys
+    if (columns.length === 0 && rows.length > 0) {
+        columns = Object.keys(rows[0]);
+    }
+    
     const headerRow = thead.insertRow();
-    Object.keys(rows[0]).forEach(key => {
+    columns.forEach(col => {
         const th = document.createElement('th');
-        th.textContent = key;
+        th.textContent = col;
         headerRow.appendChild(th);
     });
     
+    // Add actions column header
+    const actionsTh = document.createElement('th');
+    actionsTh.textContent = 'Actions';
+    headerRow.appendChild(actionsTh);
+    
     // Create rows
-    rows.forEach(rowData => {
+    rows.forEach((rowData, rowIndex) => {
         const row = tbody.insertRow();
-        Object.values(rowData).forEach(value => {
+        
+        // Add data cells
+        columns.forEach(col => {
             const cell = row.insertCell();
-            cell.textContent = value;
+            const value = rowData[col];
+            cell.textContent = value !== null && value !== undefined ? value : 'NULL';
+            cell.title = `Type: ${typeof value}`;
         });
+        
+        // Add actions cell
+        const actionsCell = row.insertCell();
+        actionsCell.innerHTML = `
+            <button class="btn btn-small" onclick="editRow(${rowIndex})">
+                <i class="fas fa-edit"></i>
+            </button>
+            <button class="btn btn-small btn-danger" onclick="deleteRow(${rowIndex})">
+                <i class="fas fa-trash"></i>
+            </button>
+        `;
+        actionsCell.style.whiteSpace = 'nowrap';
     });
+    
+    // Update count display
+    const countElement = document.querySelector('.row-count');
+    if (countElement) {
+        countElement.textContent = `${rows.length} row(s)`;
+    }
+}
+
+// Render empty table state
+function renderEmptyTable() {
+    const table = document.getElementById('data-table');
+    const thead = table.querySelector('thead');
+    const tbody = table.querySelector('tbody');
+    
+    thead.innerHTML = '';
+    tbody.innerHTML = '';
+    
+    const row = tbody.insertRow();
+    const cell = row.insertCell();
+    cell.colSpan = 1;
+    cell.textContent = 'No data available. Try inserting some rows.';
+    cell.className = 'placeholder';
+    cell.style.textAlign = 'center';
+    cell.style.padding = '2rem';
 }
 
 // Load table schema
@@ -173,7 +277,8 @@ async function loadTableSchema(dbName, tableName) {
         const schema = await response.json();
         renderTableSchema(schema);
     } catch (error) {
-        console.error(error);
+        console.error(`Error loading schema:`, error);
+        // Schema tab will just be empty
     }
 }
 
@@ -186,7 +291,7 @@ function renderTableSchema(schema) {
         const row = tbody.insertRow();
         const cell = row.insertCell();
         cell.colSpan = 4;
-        cell.textContent = 'No schema found';
+        cell.textContent = 'No schema information available';
         cell.className = 'placeholder';
         return;
     }
@@ -198,13 +303,16 @@ function renderTableSchema(schema) {
         nameCell.textContent = col.name;
         
         const typeCell = row.insertCell();
-        typeCell.textContent = col.type;
+        typeCell.textContent = col.type || 'TEXT';
         
         const constraintsCell = row.insertCell();
         constraintsCell.textContent = col.constraints ? col.constraints.join(', ') : '';
         
         const nullableCell = row.insertCell();
-        nullableCell.textContent = col.constraints && col.constraints.includes('NOT NULL') ? 'NO' : 'YES';
+        const hasNotNull = col.constraints && col.constraints.some(c => 
+            c.toUpperCase().includes('NOT NULL')
+        );
+        nullableCell.textContent = hasNotNull ? 'NO' : 'YES';
     });
 }
 
@@ -308,14 +416,31 @@ function switchTab(tabName) {
     document.querySelectorAll('.tab-content').forEach(tab => {
         tab.classList.remove('active');
     });
-    
+
     document.querySelectorAll('.tab').forEach(tab => {
         tab.classList.remove('active');
     });
-    
-    // Show selected tab
-    document.getElementById(`${tabName}-tab`).classList.add('active');
-    event.currentTarget.classList.add('active');
+
+    // Show selected tab content
+    const tabContent = document.getElementById(`${tabName}-tab`);
+    if (tabContent) {
+        tabContent.classList.add('active');
+    }
+
+    // Activate the corresponding tab button
+    const tabButton = document.querySelector(`.tab[data-tab="${tabName}"]`);
+    if (tabButton) {
+        tabButton.classList.add('active');
+    }
+
+    // Optional refresh logic
+    if (tabName === 'data' && currentDatabase && currentTable) {
+        loadTableData(currentDatabase, currentTable);
+    }
+
+    if (tabName === 'schema' && currentDatabase && currentTable) {
+        loadTableSchema(currentDatabase, currentTable);
+    }
 }
 
 // Database creation
@@ -468,9 +593,88 @@ function clearQuery() {
     document.getElementById('query-input').value = '';
 }
 
-function insertRow() {
-    alert('Insert row functionality would be implemented here');
-    // In a full implementation, you'd show a form to enter row data
+// Insert a new row
+async function insertRow() {
+    if (!currentDatabase || !currentTable) {
+        showError('Please select a table first');
+        return;
+    }
+    
+    // Simple prompt for now - you can make this a modal later
+    const columnNames = await getTableColumns(currentDatabase, currentTable);
+    if (!columnNames || columnNames.length === 0) {
+        showError('Could not get table columns');
+        return;
+    }
+    
+    let values = [];
+    for (const col of columnNames) {
+        const value = prompt(`Enter value for ${col}:`);
+        if (value === null) return; // User cancelled
+        values.push(value);
+    }
+    
+    // Build INSERT query
+    const valuesStr = values.map(v => 
+        typeof v === 'string' ? `'${v.replace(/'/g, "''")}'` : v
+    ).join(', ');
+    
+    const query = `INSERT INTO ${currentTable} VALUES (${valuesStr})`;
+    
+    try {
+        const response = await fetch(`${API_BASE}/databases/${currentDatabase}/execute`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ query })
+        });
+        
+        const result = await response.json();
+        if (result.error) {
+            showError(`Insert failed: ${result.error}`);
+        } else {
+            showSuccess('Row inserted successfully');
+            // Refresh table data
+            await loadTableData(currentDatabase, currentTable);
+        }
+    } catch (error) {
+        showError(`Insert error: ${error.message}`);
+    }
+}
+
+// Helper to get table columns
+async function getTableColumns(dbName, tableName) {
+    try {
+        const response = await fetch(`${API_BASE}/databases/${dbName}/tables/${tableName}/schema`);
+        const schema = await response.json();
+        return schema.columns ? schema.columns.map(col => col.name) : [];
+    } catch (error) {
+        console.error('Error getting columns:', error);
+        return [];
+    }
+}
+
+// Edit a row
+function editRow(rowIndex) {
+    showError('Edit functionality not implemented yet');
+    // You would implement a modal for editing
+}
+
+// Delete a row
+async function deleteRow(rowIndex) {
+    if (!currentDatabase || !currentTable) {
+        showError('Please select a table first');
+        return;
+    }
+    
+    if (!confirm('Are you sure you want to delete this row?')) {
+        return;
+    }
+    
+    // Note: This is a simple implementation
+    // In a real system, you'd need to know the primary key
+    showError('Delete functionality needs primary key information');
 }
 
 // Close modals when clicking outside
@@ -481,3 +685,30 @@ document.querySelectorAll('.modal').forEach(modal => {
         }
     });
 });
+
+// Utility functions for status messages
+function showSuccess(message) {
+    setStatus(`✅ ${message}`);
+    // Optional: Add a toast notification
+    const toast = document.createElement('div');
+    toast.className = 'toast success';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.remove();
+    }, 3000);
+}
+
+function showError(message) {
+    setStatus(`❌ ${message}`);
+    // Optional: Add a toast notification
+    const toast = document.createElement('div');
+    toast.className = 'toast error';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.remove();
+    }, 3000);
+}
