@@ -1,203 +1,151 @@
-from typing import Dict, List, Any
+"""
+Main Database class - Facade for MyRDBMS
+"""
+
+import time
+from typing import Dict, List, Any, Optional
 from engine.storage import Storage
-from engine.table import Table
-import json
+from engine.parser import SQLParser
+from engine.query_executor import QueryExecutor
+from engine.index_manager import IndexManager
+from engine.types import QueryResult
+from engine.errors import MyRDBMSError, ParseError, ExecutionError
 
 class Database:
+    """
+    Main database interface with separated concerns.
+    
+    Architecture:
+        Client → Database.execute() → Parser → QueryExecutor → Storage
+                     ↑                                      ↓
+                    Results ←-----------------------------
+    """
+    
     def __init__(self, name: str):
         self.name = name
         self.storage = Storage()
-        self.tables = {}
-        self._load_tables()
-    
-    def _load_tables(self):
-        """Load all tables from storage"""
-        # In a real implementation, you'd load from disk
-        pass
-    
-    def create_table(self, table_name: str, columns: List[Dict]) -> bool:
-        """Create a new table"""
-        # Store schema
-        schema = {
-            'name': table_name,
-            'columns': columns
-        }
-        self.storage.save_table_schema(self.name, table_name, schema)
+        self.parser = SQLParser()
+        self.index_manager = IndexManager(self.storage)
         
-        # Create in-memory table
-        self.tables[table_name] = Table(table_name, columns)
-        return True
+        # Ensure database exists
+        if not self.storage.database_exists(name):
+            self.storage.create_database(name)
     
-    def execute(self, query: str) -> Dict:
-        """Execute a SQL-like query"""
-        query = query.strip().upper()
+    # In engine/database.py, in the execute method:
+
+    def execute(self, query: str) -> Dict[str, Any]:
+        """Execute SQL query through separated pipeline."""
+        start_time = time.time()
         
-        if query.startswith('CREATE TABLE'):
-            return self._execute_create_table(query)
-        elif query.startswith('INSERT INTO'):
-            return self._execute_insert(query)
-        elif query.startswith('SELECT'):
-            return self._execute_select(query)
-        elif query.startswith('DROP TABLE'):
-            return self._execute_drop_table(query)
-        else:
-            return {'error': f'Unknown query: {query}'}
-    
-    def _execute_create_table(self, query: str) -> Dict:
-        """Parse and execute CREATE TABLE"""
         try:
-            # Simple parser for: CREATE TABLE table_name (col1 TYPE, col2 TYPE)
-            parts = query.split('(', 1)
-            table_part = parts[0].replace('CREATE TABLE', '').strip()
-            table_name = table_part.split()[0].strip()
+            # 1. Parse
+            parsed_query = self.parser.parse(query)
             
-            cols_part = parts[1].rsplit(')', 1)[0]
-            columns = []
+            # 2. Execute - QueryExecutor only takes storage and db_name
+            executor = QueryExecutor(self.storage, self.name)
+            result = executor.execute(parsed_query)
             
-            for col_def in cols_part.split(','):
-                col_def = col_def.strip()
-                if col_def:
-                    col_parts = col_def.split()
-                    col_name = col_parts[0]
-                    col_type = col_parts[1] if len(col_parts) > 1 else 'TEXT'
-                    
-                    constraints = []
-                    if len(col_parts) > 2:
-                        constraints = col_parts[2:]
-                    
-                    columns.append({
-                        'name': col_name,
-                        'type': col_type,
-                        'constraints': constraints
-                    })
+            # 3. Format results
+            execution_time = time.time() - start_time
             
-            self.create_table(table_name, columns)
-            return {'message': f'Table {table_name} created successfully'}
+            query_result = QueryResult(
+                success='error' not in result,
+                data=result.get('rows', []),
+                columns=result.get('columns', []),
+                message=result.get('message', 'Query executed successfully'),
+                row_count=result.get('count', 0),
+                execution_time=execution_time
+            )
+            
+            return query_result.to_dict()
+            
+        except ParseError as e:
+            return QueryResult(
+                success=False,
+                message=f"Parse error: {str(e)}",
+                execution_time=time.time() - start_time
+            ).to_dict()
+            
         except Exception as e:
-            return {'error': f'Error creating table: {str(e)}'}
+            return QueryResult(
+                success=False,
+                message=f"Unexpected error: {str(e)}",
+                execution_time=time.time() - start_time
+            ).to_dict()
     
-    def _execute_insert(self, query: str) -> Dict:
-        """Parse and execute INSERT"""
+    def explain(self, query: str) -> Dict[str, Any]:
+        """Show execution plan for query"""
         try:
-            # Parse: INSERT INTO table_name VALUES (val1, val2, ...)
-            query = query.replace('INSERT INTO', '').strip()
-            table_name = query.split()[0].strip()
+            parsed = self.parser.parse(query)
             
-            # Find values part
-            start = query.find('VALUES')
-            if start == -1:
-                start = query.find('VALUES')
-            
-            values_str = query[start + 6:].strip()
-            values_str = values_str.strip('()')
-            
-            # Parse values
-            values = []
-            current = ''
-            in_quotes = False
-            
-            for char in values_str:
-                if char == "'" and not in_quotes:
-                    in_quotes = True
-                    current += char
-                elif char == "'" and in_quotes:
-                    in_quotes = False
-                    current += char
-                elif char == ',' and not in_quotes:
-                    values.append(current.strip())
-                    current = ''
-                else:
-                    current += char
-            
-            if current:
-                values.append(current.strip())
-            
-            # Convert values to appropriate types
-            typed_values = []
-            for v in values:
-                if v.startswith("'") and v.endswith("'"):
-                    typed_values.append(v[1:-1])  # Remove quotes
-                elif v.lower() == 'true':
-                    typed_values.append(True)
-                elif v.lower() == 'false':
-                    typed_values.append(False)
-                elif '.' in v:
-                    typed_values.append(float(v))
-                else:
-                    typed_values.append(int(v) if v.isdigit() else v)
-            
-            # Get column names from schema
-            schema = self.storage.load_table_schema(self.name, table_name)
-            column_names = [col['name'] for col in schema.get('columns', [])]
-            
-            # Create row dict
-            if len(typed_values) != len(column_names):
-                return {'error': f'Expected {len(column_names)} values, got {len(typed_values)}'}
-            
-            row = {}
-            for i, col_name in enumerate(column_names):
-                row[col_name] = typed_values[i]
-            
-            # Insert into storage
-            self.storage.insert_row(self.name, table_name, row)
-            
-            return {'message': '1 row inserted'}
-        except Exception as e:
-            return {'error': f'Error inserting: {str(e)}'}
-    
-    def _execute_select(self, query: str) -> Dict:
-        """Parse and execute SELECT"""
-        try:
-            # Simple: SELECT * FROM table_name WHERE column=value
-            query = query.replace('SELECT', '').strip()
-            
-            from_idx = query.find('FROM')
-            if from_idx == -1:
-                return {'error': 'Missing FROM clause'}
-            
-            columns_part = query[:from_idx].strip()
-            rest = query[from_idx + 4:].strip()
-            
-            # Get table name
-            where_idx = rest.find('WHERE')
-            if where_idx != -1:
-                table_name = rest[:where_idx].strip()
-                where_clause = rest[where_idx + 5:].strip()
-            else:
-                table_name = rest.strip()
-                where_clause = None
-            
-            # Get all rows
-            rows = self.storage.get_all_rows(self.name, table_name)
-            
-            # Apply WHERE clause
-            if where_clause:
-                filtered_rows = []
-                for row in rows:
-                    if '=' in where_clause:
-                        col, value = where_clause.split('=', 1)
-                        col = col.strip()
-                        value = value.strip().strip("'")
-                        if str(row.get(col, '')) == value:
-                            filtered_rows.append(row)
-                rows = filtered_rows
-            
-            return {
-                'columns': list(rows[0].keys()) if rows else [],
-                'rows': rows,
-                'count': len(rows)
+            plan = {
+                'query_type': type(parsed).__name__,
+                'components': []
             }
-        except Exception as e:
-            return {'error': f'Error selecting: {str(e)}'}
-    
-    def _execute_drop_table(self, query: str) -> Dict:
-        """Execute DROP TABLE"""
-        try:
-            table_name = query.replace('DROP TABLE', '').strip()
-            success = self.storage.delete_table(self.name, table_name)
-            if success:
-                return {'message': f'Table {table_name} dropped'}
-            else:
-                return {'error': f'Table {table_name} not found'}
+            
+            # Analyze parsed query
+            if hasattr(parsed, 'table_name'):
+                plan['components'].append({
+                    'operation': 'TABLE_ACCESS',
+                    'table': parsed.table_name
+                })
+            
+            if hasattr(parsed, 'where_clause') and parsed.where_clause:
+                plan['components'].append({
+                    'operation': 'FILTER',
+                    'condition': parsed.where_clause
+                })
+            
+            if hasattr(parsed, 'join_clause') and parsed.join_clause:
+                plan['components'].append({
+                    'operation': 'JOIN',
+                    'type': parsed.join_clause.get('type', 'INNER'),
+                    'table': parsed.join_clause['table']
+                })
+            
+            return {'plan': plan}
+            
         except Exception as e:
             return {'error': str(e)}
+    
+    def create_index(self, table_name: str, column: str, index_type: str = "HASH") -> bool:
+        """Create index on table column"""
+        return self.index_manager.create_index(self.name, table_name, column, index_type)
+    
+    def list_indexes(self, table_name: str) -> List[str]:
+        """List indexes for table"""
+        return self.index_manager.list_indexes(self.name, table_name)
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get database statistics"""
+        meta = self.storage._load_metadata(self.name)
+        
+        stats = {
+            'name': self.name,
+            'tables': [],
+            'total_rows': 0
+        }
+        
+        for table_name in meta.get('tables', []):
+            rows = self.storage.get_all_rows(self.name, table_name)
+            schema = self.storage.load_table_schema(self.name, table_name)
+            
+            stats['tables'].append({
+                'name': table_name,
+                'row_count': len(rows),
+                'columns': len(schema.get('columns', [])) if schema else 0
+            })
+            stats['total_rows'] += len(rows)
+        
+        return stats
+    
+    def backup(self, backup_path: Optional[str] = None) -> bool:
+        """Backup database (conceptual)"""
+        # In production, would copy all files
+        print(f"Backup concept: Would copy {self.name} database files")
+        return True
+    
+    def restore(self, backup_path: str) -> bool:
+        """Restore from backup (conceptual)"""
+        print(f"Restore concept: Would restore from {backup_path}")
+        return True
