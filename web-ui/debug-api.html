@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Debug</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 5px; overflow: auto; }
+        .success { color: green; }
+        .error { color: red; }
+        button { margin: 5px; padding: 10px; }
+        .endpoint { font-family: monospace; background: #e9ecef; padding: 2px 5px; }
+    </style>
+</head>
+<body>
+    <h1>MyRDBMS API Debug</h1>
+    
+    <div>
+        <button onclick="testEndpoint('/health')">Test /health</button>
+        <button onclick="testEndpoint('/databases')">Test /databases</button>
+        <button onclick="createTestDB()">Create Test DB</button>
+        <button onclick="createTestTable()">Create Test Table</button>
+        <button onclick="insertTestData()">Insert Test Data</button>
+        <button onclick="queryTestData()">Query Test Data</button>
+    </div>
+    
+    <div id="result" style="margin-top: 20px;"></div>
+    
+    <script>
+        const API_BASE = 'http://localhost:5000';
+        
+        async function testEndpoint(endpoint) {
+            const resultDiv = document.getElementById('result');
+            const url = `${API_BASE}/api${endpoint}`;
+            resultDiv.innerHTML = `<p>Testing <span class="endpoint">${url}</span>...</p>`;
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <h3 class="success">✅ Success (Status: ${response.status})</h3>
+                    <p>Endpoint: <span class="endpoint">${url}</span></p>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <h3 class="error">❌ Error</h3>
+                    <p>Endpoint: <span class="endpoint">${url}</span></p>
+                    <p>Error: ${error.message}</p>
+                `;
+            }
+        }
+        
+        async function createTestDB() {
+            const resultDiv = document.getElementById('result');
+            const url = `${API_BASE}/api/databases`;
+            resultDiv.innerHTML = `<p>Creating test database at <span class="endpoint">${url}</span>...</p>`;
+            
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ name: 'test_debug_db' })
+                });
+                
+                const data = await response.json();
+                resultDiv.innerHTML = `
+                    <h3 class="${response.ok ? 'success' : 'error'}">${response.ok ? '✅' : '❌'} ${response.ok ? 'Success' : 'Error'} (Status: ${response.status})</h3>
+                    <p>Endpoint: <span class="endpoint">${url}</span></p>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <h3 class="error">❌ Error</h3>
+                    <p>Endpoint: <span class="endpoint">${url}</span></p>
+                    <p>Error: ${error.message}</p>
+                `;
+            }
+        }
+        
+        async function createTestTable() {
+            const resultDiv = document.getElementById('result');
+            const url = `${API_BASE}/api/databases/test_debug_db/execute`;
+            resultDiv.innerHTML = `<p>Creating test table at <span class="endpoint">${url}</span>...</p>`;
+            
+            const query = `
+                CREATE TABLE debug_users (
+                    id INT PRIMARY KEY,
+                    name VARCHAR(50),
+                    email VARCHAR(100),
+                    age INT,
+                    active BOOLEAN
+                )
+            `;
+            
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ query })
+                });
+                
+                const data = await response.json();
+                resultDiv.innerHTML = `
+                    <h3 class="${data.success ? 'success' : 'error'}">${data.success ? '✅' : '❌'} ${data.success ? 'Success' : 'Error'}</h3>
+                    <p>Endpoint: <span class="endpoint">${url}</span></p>
+                    <p>Query: <code>${query}</code></p>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <h3 class="error">❌ Error</h3>
+                    <p>Endpoint: <span class="endpoint">${url}</span></p>
+                    <p>Error: ${error.message}</p>
+                `;
+            }
+        }
+        
+        async function insertTestData() {
+            const resultDiv = document.getElementById('result');
+            const url = `${API_BASE}/api/databases/test_debug_db/execute`;
+            resultDiv.innerHTML = `<p>Inserting test data at <span class="endpoint">${url}</span>...</p>`;
+            
+            const queries = [
+                "INSERT INTO debug_users VALUES (1, 'Alice', 'alice@example.com', 30, true)",
+                "INSERT INTO debug_users VALUES (2, 'Bob', 'bob@example.com', 25, true)",
+                "INSERT INTO debug_users VALUES (3, 'Charlie', 'charlie@example.com', 35, false)"
+            ];
+            
+            let results = [];
+            
+            for (const query of queries) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ query })
+                    });
+                    
+                    const data = await response.json();
+                    results.push({ query, result: data });
+                } catch (error) {
+                    results.push({ query, error: error.message });
+                }
+            }
+            
+            resultDiv.innerHTML = `
+                <h3>Insert Results</h3>
+                <p>Endpoint: <span class="endpoint">${url}</span></p>
+                <pre>${JSON.stringify(results, null, 2)}</pre>
+            `;
+        }
+        
+        async function queryTestData() {
+            const resultDiv = document.getElementById('result');
+            const url = `${API_BASE}/api/databases/test_debug_db/execute`;
+            resultDiv.innerHTML = `<p>Querying test data at <span class="endpoint">${url}</span>...</p>`;
+            
+            const query = "SELECT * FROM debug_users";
+            
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ query })
+                });
+                
+                const data = await response.json();
+                resultDiv.innerHTML = `
+                    <h3 class="${data.success ? 'success' : 'error'}">${data.success ? '✅' : '❌'} Query Results</h3>
+                    <p>Endpoint: <span class="endpoint">${url}</span></p>
+                    <p>Query: <code>${query}</code></p>
+                    <p>Success: ${data.success}</p>
+                    <p>Message: ${data.message || 'N/A'}</p>
+                    <p>Row count: ${data.row_count || data.count || 0}</p>
+                    <p>Columns: ${data.columns ? data.columns.join(', ') : 'N/A'}</p>
+                    <h4>Data:</h4>
+                    <pre>${JSON.stringify(data.data || data.rows || [], null, 2)}</pre>
+                    <h4>Full Response:</h4>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <h3 class="error">❌ Error</h3>
+                    <p>Endpoint: <span class="endpoint">${url}</span></p>
+                    <p>Error: ${error.message}</p>
+                `;
+            }
+        }
+        
+        // Test on load
+        window.onload = () => testEndpoint('/health');
+    </script>
+</body>
+</html>

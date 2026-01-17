@@ -1,0 +1,9 @@
+{
+  "tables": [
+    "users",
+    "sessions",
+    "customers",
+    "invoices",
+    "invoice_items"
+  ]
+}

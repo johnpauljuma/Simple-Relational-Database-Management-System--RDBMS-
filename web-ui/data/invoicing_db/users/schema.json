@@ -1,0 +1,61 @@
+{
+  "name": "users",
+  "columns": [
+    {
+      "name": "id",
+      "data_type": "INT",
+      "constraints": [
+        "PRIMARY KEY"
+      ],
+      "max_length": null
+    },
+    {
+      "name": "username",
+      "data_type": "VARCHAR",
+      "constraints": [],
+      "max_length": 50
+    },
+    {
+      "name": "email",
+      "data_type": "VARCHAR",
+      "constraints": [],
+      "max_length": 100
+    },
+    {
+      "name": "password_hash",
+      "data_type": "VARCHAR",
+      "constraints": [],
+      "max_length": 255
+    },
+    {
+      "name": "full_name",
+      "data_type": "VARCHAR",
+      "constraints": [],
+      "max_length": 100
+    },
+    {
+      "name": "company_name",
+      "data_type": "VARCHAR",
+      "constraints": [],
+      "max_length": 100
+    },
+    {
+      "name": "created_at",
+      "data_type": "TIMESTAMP",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "last_login",
+      "data_type": "TIMESTAMP",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "is_active",
+      "data_type": "BOOLEAN",
+      "constraints": [],
+      "max_length": null
+    }
+  ]
+}

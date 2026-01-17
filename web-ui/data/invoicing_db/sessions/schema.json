@@ -1,0 +1,49 @@
+{
+  "name": "sessions",
+  "columns": [
+    {
+      "name": "session_id",
+      "data_type": "VARCHAR",
+      "constraints": [
+        "PRIMARY KEY"
+      ],
+      "max_length": 255
+    },
+    {
+      "name": "user_id",
+      "data_type": "INT",
+      "constraints": [
+        "NOT NULL"
+      ],
+      "max_length": null
+    },
+    {
+      "name": "created_at",
+      "data_type": "TEXT",
+      "constraints": [
+        "NOT NULL"
+      ],
+      "max_length": null
+    },
+    {
+      "name": "expires_at",
+      "data_type": "TEXT",
+      "constraints": [
+        "NOT NULL"
+      ],
+      "max_length": null
+    },
+    {
+      "name": "ip_address",
+      "data_type": "VARCHAR",
+      "constraints": [],
+      "max_length": 45
+    },
+    {
+      "name": "user_agent",
+      "data_type": "TEXT",
+      "constraints": [],
+      "max_length": null
+    }
+  ]
+}

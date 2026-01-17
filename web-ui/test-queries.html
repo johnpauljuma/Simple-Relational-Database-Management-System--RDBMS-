@@ -1,0 +1,178 @@
+<!-- test_queries.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MyRDBMS Query Tests</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test { margin: 20px 0; padding: 10px; border: 1px solid #ddd; }
+        .query { background: #f5f5f5; padding: 10px; font-family: monospace; }
+        .result { background: #e8f5e8; padding: 10px; margin-top: 10px; }
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e8; color: #2e7d32; }
+        button { margin: 5px; padding: 8px 15px; }
+    </style>
+</head>
+<body>
+    <h1>MyRDBMS Query Tests</h1>
+    <div id="tests"></div>
+    
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+        const TEST_DB = 'testdb'; // Change to your test database
+        
+        const testQueries = [
+            {
+                name: "1. CREATE TABLE with constraints",
+                query: `CREATE TABLE employees (
+                    emp_id INT PRIMARY KEY,
+                    first_name VARCHAR(50) NOT NULL,
+                    last_name VARCHAR(50) NOT NULL,
+                    email VARCHAR(100) UNIQUE,
+                    salary DECIMAL(10, 2),
+                    is_active BOOLEAN DEFAULT TRUE,
+                    hire_date VARCHAR(20),
+                    department VARCHAR(50)
+                )`
+            },
+            {
+                name: "2. INSERT multiple rows",
+                query: `INSERT INTO employees VALUES 
+                (1, 'John', 'Doe', 'john.doe@company.com', 75000.50, TRUE, '2023-01-15', 'Engineering'),
+                (2, 'Jane', 'Smith', 'jane.smith@company.com', 82000.00, TRUE, '2022-06-20', 'Marketing'),
+                (3, 'Bob', 'Johnson', 'bob.j@company.com', 65000.75, FALSE, '2021-03-10', 'Sales')`
+            },
+            {
+                name: "3. SELECT all rows",
+                query: "SELECT * FROM employees"
+            },
+            {
+                name: "4. SELECT with WHERE",
+                query: "SELECT * FROM employees WHERE department = 'Engineering'"
+            },
+            {
+                name: "5. SELECT specific columns",
+                query: "SELECT emp_id, first_name, last_name, salary FROM employees"
+            },
+            {
+                name: "6. SELECT with ORDER BY",
+                query: "SELECT * FROM employees ORDER BY salary DESC"
+            },
+            {
+                name: "7. UPDATE single row",
+                query: "UPDATE employees SET salary = 80000.00 WHERE emp_id = 1"
+            },
+            {
+                name: "8. Verify UPDATE",
+                query: "SELECT * FROM employees WHERE emp_id = 1"
+            },
+            {
+                name: "9. DELETE row",
+                query: "DELETE FROM employees WHERE emp_id = 3"
+            },
+            {
+                name: "10. Verify DELETE",
+                query: "SELECT * FROM employees"
+            },
+            {
+                name: "11. Test JOIN (create departments first)",
+                setup: `CREATE TABLE departments (
+                    dept_id INT PRIMARY KEY,
+                    dept_name VARCHAR(50),
+                    location VARCHAR(50)
+                );
+                INSERT INTO departments VALUES
+                (1, 'Engineering', 'Building A'),
+                (2, 'Marketing', 'Building B');`,
+                query: `SELECT e.first_name, e.last_name, d.dept_name, d.location
+                FROM employees e
+                JOIN departments d ON e.department = d.dept_name`
+            }
+        ];
+        
+        async function runTest(test, index) {
+            const testDiv = document.getElementById(`test-${index}`);
+            const resultDiv = testDiv.querySelector('.result');
+            
+            resultDiv.innerHTML = 'Running...';
+            resultDiv.className = 'result';
+            
+            try {
+                // Run setup if exists
+                if (test.setup) {
+                    const setupResponse = await fetch(`${API_BASE}/databases/${TEST_DB}/execute`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ query: test.setup })
+                    });
+                    const setupResult = await setupResponse.json();
+                    console.log(`Setup for ${test.name}:`, setupResult);
+                }
+                
+                // Run main query
+                const response = await fetch(`${API_BASE}/databases/${TEST_DB}/execute`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ query: test.query })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    resultDiv.className = 'result success';
+                    let output = `<strong>Success:</strong> ${result.message}<br>`;
+                    
+                    if (result.data && result.data.length > 0) {
+                        output += `<strong>Data (${result.data.length} rows):</strong><br>`;
+                        output += `<pre>${JSON.stringify(result.data, null, 2)}</pre>`;
+                    } else if (result.row_count > 0) {
+                        output += `<strong>Affected rows:</strong> ${result.row_count}`;
+                    }
+                    
+                    resultDiv.innerHTML = output;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `<strong>Error:</strong> ${result.message || result.error}`;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `<strong>Exception:</strong> ${error.message}`;
+            }
+        }
+        
+        function runAllTests() {
+            testQueries.forEach((test, index) => {
+                runTest(test, index);
+            });
+        }
+        
+        // Create test UI
+        document.addEventListener('DOMContentLoaded', () => {
+            const testsDiv = document.getElementById('tests');
+            
+            testQueries.forEach((test, index) => {
+                const testDiv = document.createElement('div');
+                testDiv.className = 'test';
+                testDiv.id = `test-${index}`;
+                
+                testDiv.innerHTML = `
+                    <h3>${test.name}</h3>
+                    <div class="query">${test.query}</div>
+                    <button onclick="runTest(${JSON.stringify(test)}, ${index})">Run Test</button>
+                    <div class="result">Not run yet</div>
+                `;
+                
+                testsDiv.appendChild(testDiv);
+            });
+            
+            // Add Run All button
+            const runAllBtn = document.createElement('button');
+            runAllBtn.textContent = 'Run All Tests';
+            runAllBtn.onclick = runAllTests;
+            runAllBtn.style.padding = '10px 20px';
+            runAllBtn.style.fontSize = '16px';
+            testsDiv.insertBefore(runAllBtn, testsDiv.firstChild);
+        });
+    </script>
+</body>
+</html>

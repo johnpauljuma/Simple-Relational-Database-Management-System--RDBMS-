@@ -1,0 +1,71 @@
+{
+  "name": "invoice_items",
+  "columns": [
+    {
+      "name": "id",
+      "data_type": "INT",
+      "constraints": [
+        "PRIMARY KEY"
+      ],
+      "max_length": null
+    },
+    {
+      "name": "invoice_id",
+      "data_type": "INT",
+      "constraints": [
+        "NOT NULL"
+      ],
+      "max_length": null
+    },
+    {
+      "name": "description",
+      "data_type": "VARCHAR",
+      "constraints": [
+        "NOT NULL"
+      ],
+      "max_length": 255
+    },
+    {
+      "name": "quantity",
+      "data_type": "TEXT",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "unit_price",
+      "data_type": "TEXT",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "tax_rate",
+      "data_type": "TEXT",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "amount",
+      "data_type": "TEXT",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "tax_amount",
+      "data_type": "TEXT",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "total_amount",
+      "data_type": "TEXT",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "created_at",
+      "data_type": "TIMESTAMP",
+      "constraints": [],
+      "max_length": null
+    }
+  ]
+}

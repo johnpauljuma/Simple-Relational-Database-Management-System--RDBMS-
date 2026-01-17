@@ -249,41 +249,84 @@ class SQLParser:
         # Extract FROM and beyond
         from_part = query[select_match.end():].strip()
         
-        # Parse table name and possible JOIN
+        # Parse table name (handle aliases)
         table_name = None
+        table_alias = None
         join_clause = None
         where_clause = None
         group_by = None
         order_by = None
         limit = None
         
-        # Simple parser for basic cases
+        # Simple parser - split by spaces
         words = from_part.split()
-        table_name = words[0] if words else None
+        
+        if words:
+            # Get main table (could have alias)
+            table_with_alias = words[0]
+            if ' ' in table_with_alias:
+                # Has alias like "invoices i"
+                table_parts = table_with_alias.split()
+                table_name = table_parts[0]
+                table_alias = table_parts[1] if len(table_parts) > 1 else None
+            else:
+                table_name = table_with_alias
+                table_alias = None
         
         # Look for JOIN
-        if 'JOIN' in [w.upper() for w in words]:
-            join_idx = [w.upper() for w in words].index('JOIN')
-            join_table = words[join_idx + 1] if join_idx + 1 < len(words) else None
+        join_keywords = ['JOIN', 'INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN']
+        join_found = False
+        join_type = 'INNER'
+        join_table = None
+        join_alias = None
+        on_clause = None
+        
+        for i, word in enumerate(words):
+            upper_word = word.upper()
             
-            # Parse ON clause if present
-            on_clause = None
-            if 'ON' in [w.upper() for w in words[join_idx:]]:
-                on_idx = [w.upper() for w in words[join_idx:]].index('ON') + join_idx
-                on_clause = ' '.join(words[on_idx + 1:])
-            
+            if upper_word in join_keywords:
+                join_found = True
+                join_type = 'INNER' if upper_word == 'JOIN' else upper_word.split()[0]
+                
+                # Get join table (next word, could have alias)
+                if i + 1 < len(words):
+                    join_table_with_alias = words[i + 1]
+                    if ' ' in join_table_with_alias:
+                        join_parts = join_table_with_alias.split()
+                        join_table = join_parts[0]
+                        join_alias = join_parts[1] if len(join_parts) > 1 else None
+                    else:
+                        join_table = join_table_with_alias
+                        join_alias = None
+                
+                # Look for ON clause
+                for j in range(i + 2, len(words)):
+                    if words[j].upper() == 'ON':
+                        # Collect ON clause until WHERE/ORDER/GROUP/LIMIT
+                        on_tokens = []
+                        for k in range(j + 1, len(words)):
+                            if words[k].upper() in ['WHERE', 'ORDER', 'GROUP', 'LIMIT']:
+                                break
+                            on_tokens.append(words[k])
+                        on_clause = ' '.join(on_tokens)
+                        break
+                
+                break
+        
+        if join_found and join_table:
             join_clause = {
-                'type': 'INNER',
+                'type': join_type,
                 'table': join_table,
+                'alias': join_alias,
                 'on': on_clause
             }
         
-        # Look for WHERE
+        # Look for WHERE (simplified - needs improvement for complex WHERE with JOIN)
         if 'WHERE' in [w.upper() for w in words]:
             where_idx = [w.upper() for w in words].index('WHERE')
             where_end = len(words)
             
-            # Find end of WHERE clause (before GROUP BY, ORDER BY, LIMIT)
+            # Find end of WHERE clause
             for clause in ['GROUP', 'ORDER', 'LIMIT']:
                 if clause in [w.upper() for w in words[where_idx:]]:
                     clause_idx = [w.upper() for w in words[where_idx:]].index(clause)
@@ -300,9 +343,9 @@ class SQLParser:
         
         # Look for ORDER BY
         if 'ORDER BY' in from_part.upper():
-            order_match = re.search(r'ORDER BY\s+(\w+)', from_part, re.IGNORECASE)
+            order_match = re.search(r'ORDER BY\s+(.+?)(?:\s+(?:LIMIT|$))', from_part, re.IGNORECASE)
             if order_match:
-                order_by = order_match.group(1)
+                order_by = order_match.group(1).strip()
         
         # Look for LIMIT
         if 'LIMIT' in from_part.upper():
@@ -316,7 +359,7 @@ class SQLParser:
         return SelectQuery(
             query_type='SELECT',
             columns=columns,
-            table_name=table_name,
+            table_name=table_name,  # Just the table name, no alias
             where_clause=where_clause,
             join_clause=join_clause,
             group_by=group_by,

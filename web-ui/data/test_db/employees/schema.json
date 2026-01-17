@@ -1,0 +1,61 @@
+{
+  "name": "employees",
+  "columns": [
+    {
+      "name": "emp_id",
+      "data_type": "INT",
+      "constraints": [
+        "PRIMARY KEY"
+      ],
+      "max_length": null
+    },
+    {
+      "name": "first_name",
+      "data_type": "VARCHAR",
+      "constraints": [
+        "NOT NULL"
+      ],
+      "max_length": 50
+    },
+    {
+      "name": "last_name",
+      "data_type": "VARCHAR",
+      "constraints": [
+        "NOT NULL"
+      ],
+      "max_length": 50
+    },
+    {
+      "name": "email",
+      "data_type": "VARCHAR",
+      "constraints": [
+        "UNIQUE"
+      ],
+      "max_length": 100
+    },
+    {
+      "name": "salary",
+      "data_type": "TEXT",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "is_active",
+      "data_type": "BOOLEAN",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "hire_date",
+      "data_type": "VARCHAR",
+      "constraints": [],
+      "max_length": 20
+    },
+    {
+      "name": "department",
+      "data_type": "VARCHAR",
+      "constraints": [],
+      "max_length": 50
+    }
+  ]
+}

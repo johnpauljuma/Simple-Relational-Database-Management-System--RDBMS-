@@ -1,0 +1,6 @@
+{
+  "tables": [
+    "debug_users",
+    "users"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "name": "users",
+  "columns": [
+    {
+      "name": "id",
+      "data_type": "INT",
+      "constraints": [
+        "PRIMARY KEY",
+        "NOT NULL"
+      ],
+      "max_length": null
+    },
+    {
+      "name": "name",
+      "data_type": "VARCHAR",
+      "constraints": [
+        "NOT NULL"
+      ],
+      "max_length": 50
+    },
+    {
+      "name": "age",
+      "data_type": "INT",
+      "constraints": [
+        "NOT NULL"
+      ],
+      "max_length": null
+    }
+  ]
+}

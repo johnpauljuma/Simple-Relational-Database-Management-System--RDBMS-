@@ -1,0 +1,120 @@
+{
+  "name": "invoices",
+  "columns": [
+    {
+      "name": "id",
+      "data_type": "INT",
+      "constraints": [
+        "PRIMARY KEY"
+      ],
+      "max_length": null
+    },
+    {
+      "name": "customer_id",
+      "data_type": "INT",
+      "constraints": [
+        "NOT NULL"
+      ],
+      "max_length": null
+    },
+    {
+      "name": "user_id",
+      "data_type": "INT",
+      "constraints": [
+        "NOT NULL"
+      ],
+      "max_length": null
+    },
+    {
+      "name": "invoice_number",
+      "data_type": "VARCHAR",
+      "constraints": [
+        "UNIQUE",
+        "NOT NULL"
+      ],
+      "max_length": 50
+    },
+    {
+      "name": "issue_date",
+      "data_type": "DATE",
+      "constraints": [
+        "NOT NULL"
+      ],
+      "max_length": null
+    },
+    {
+      "name": "due_date",
+      "data_type": "DATE",
+      "constraints": [
+        "NOT NULL"
+      ],
+      "max_length": null
+    },
+    {
+      "name": "subtotal",
+      "data_type": "TEXT",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "tax_amount",
+      "data_type": "TEXT",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "total_amount",
+      "data_type": "TEXT",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "amount_paid",
+      "data_type": "TEXT",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "balance_due",
+      "data_type": "TEXT",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "status",
+      "data_type": "VARCHAR",
+      "constraints": [],
+      "max_length": 20
+    },
+    {
+      "name": "currency",
+      "data_type": "VARCHAR",
+      "constraints": [],
+      "max_length": 3
+    },
+    {
+      "name": "notes",
+      "data_type": "TEXT",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "terms",
+      "data_type": "TEXT",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "created_at",
+      "data_type": "TIMESTAMP",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "updated_at",
+      "data_type": "TIMESTAMP",
+      "constraints": [],
+      "max_length": null
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "name": "customers",
+  "columns": [
+    {
+      "name": "id",
+      "data_type": "INT",
+      "constraints": [
+        "PRIMARY KEY"
+      ],
+      "max_length": null
+    },
+    {
+      "name": "user_id",
+      "data_type": "INT",
+      "constraints": [
+        "NOT NULL"
+      ],
+      "max_length": null
+    },
+    {
+      "name": "name",
+      "data_type": "VARCHAR",
+      "constraints": [
+        "NOT NULL"
+      ],
+      "max_length": 100
+    },
+    {
+      "name": "email",
+      "data_type": "VARCHAR",
+      "constraints": [],
+      "max_length": 100
+    },
+    {
+      "name": "phone",
+      "data_type": "VARCHAR",
+      "constraints": [],
+      "max_length": 20
+    },
+    {
+      "name": "address",
+      "data_type": "TEXT",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "city",
+      "data_type": "VARCHAR",
+      "constraints": [],
+      "max_length": 50
+    },
+    {
+      "name": "country",
+      "data_type": "VARCHAR",
+      "constraints": [],
+      "max_length": 50
+    },
+    {
+      "name": "tax_id",
+      "data_type": "VARCHAR",
+      "constraints": [],
+      "max_length": 50
+    },
+    {
+      "name": "notes",
+      "data_type": "TEXT",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "created_at",
+      "data_type": "TIMESTAMP",
+      "constraints": [],
+      "max_length": null
+    },
+    {
+      "name": "updated_at",
+      "data_type": "TIMESTAMP",
+      "constraints": [],
+      "max_length": null
+    }
+  ]
+}

@@ -11,6 +11,9 @@ from engine.storage import Storage
 from engine.join_executor import JoinExecutor
 from engine.index_manager import IndexManager
 from engine.errors import ExecutionError
+import logging
+
+logger = logging.getLogger(__name__)
 
 class QueryExecutor:
     """Executes parsed queries against storage"""
@@ -223,16 +226,19 @@ class QueryExecutor:
             columns = list(rows[0].keys()) if rows else []
             
             return {
-                'columns': columns,
-                'rows': rows,
-                'count': len(rows)
-            }
+            'columns': columns,
+            'rows': rows,          # Original format
+            'data': rows,          # Frontend expects 'data'
+            'count': len(rows),    # Original format
+            'row_count': len(rows), # Frontend expects 'row_count'
+            'message': 'Query executed successfully'
+        }
             
         except Exception as e:
             return {'error': f'Error executing SELECT: {str(e)}'}
     
     def _execute_join(self, left_rows: List[Dict], query: SelectQuery) -> Dict[str, Any]:
-        """Execute JOIN operation"""
+        """Execute JOIN operation - IMPROVED VERSION"""
         try:
             join_clause = query.join_clause
             if not join_clause or 'table' not in join_clause:
@@ -244,92 +250,230 @@ class QueryExecutor:
             # Get rows from right table
             right_rows = self.storage.get_all_rows(self.db_name, right_table)
             
-            # Parse ON clause (simple: left.column = right.column)
+            if not right_rows:
+                return {
+                    'rows': [],
+                    'message': f'Right table {right_table} is empty',
+                    'columns': list(left_rows[0].keys()) if left_rows else []
+                }
+            
+            # Parse ON clause with better handling
             left_col = None
             right_col = None
-            if '=' in on_clause:
-                left_part, right_part = on_clause.split('=')
-                left_col = left_part.strip().split('.')[-1]
-                right_col = right_part.strip().split('.')[-1]
             
-            # Perform nested loop join
+            if on_clause and '=' in on_clause:
+                # Remove any whitespace and split on '='
+                parts = on_clause.split('=', 1)  # Split only on first '='
+                if len(parts) == 2:
+                    left_part = parts[0].strip()
+                    right_part = parts[1].strip()
+                    
+                    # Extract column names (handle table.column syntax)
+                    left_col = left_part.split('.')[-1] if '.' in left_part else left_part
+                    right_col = right_part.split('.')[-1] if '.' in right_part else right_part
+            
+            # Check if columns exist in tables
+            if left_col and left_rows:
+                # Verify left column exists in left table
+                sample_left = left_rows[0]
+                if left_col not in sample_left:
+                    # Try case-insensitive match
+                    for key in sample_left.keys():
+                        if key.lower() == left_col.lower():
+                            left_col = key
+                            break
+                    else:
+                        return {'error': f'Column {left_col} not found in left table'}
+            
+            if right_col and right_rows:
+                # Verify right column exists in right table
+                sample_right = right_rows[0]
+                if right_col not in sample_right:
+                    # Try case-insensitive match
+                    for key in sample_right.keys():
+                        if key.lower() == right_col.lower():
+                            right_col = key
+                            break
+                    else:
+                        return {'error': f'Column {right_col} not found in right table {right_table}'}
+            
+            # Perform join
             joined_rows = []
-            for left_row in left_rows:
+            
+            if not left_col or not right_col:
+                # Cartesian product (no valid ON clause)
+                logger.warning(f'No valid ON clause, performing cartesian product')
+                for left_row in left_rows:
+                    for right_row in right_rows:
+                        merged = self._merge_rows(left_row, right_row, right_table, query.columns)
+                        joined_rows.append(merged)
+            else:
+                # INNER JOIN with ON clause
+                # Create lookup for right table for faster matching
+                right_lookup = {}
                 for right_row in right_rows:
-                    # If no ON clause or columns match, join all rows (cartesian product)
-                    if not left_col or not right_col:
-                        merged = {**left_row, **{f"{right_table}_{k}": v for k, v in right_row.items()}}
-                        joined_rows.append(merged)
-                    elif left_row.get(left_col) == right_row.get(right_col):
-                        merged = {**left_row, **{f"{right_table}_{k}": v for k, v in right_row.items()}}
-                        joined_rows.append(merged)
+                    key = str(right_row.get(right_col, ''))
+                    if key not in right_lookup:
+                        right_lookup[key] = []
+                    right_lookup[key].append(right_row)
+                
+                # Perform join using lookup
+                for left_row in left_rows:
+                    left_key = str(left_row.get(left_col, ''))
+                    
+                    if left_key in right_lookup:
+                        for right_row in right_lookup[left_key]:
+                            merged = self._merge_rows(left_row, right_row, right_table, query.columns)
+                            joined_rows.append(merged)
+                    # Note: For INNER JOIN, skip rows with no match
+            
+            # Get column names for result
+            columns = []
+            if joined_rows:
+                columns = list(joined_rows[0].keys())
             
             return {
                 'rows': joined_rows,
-                'message': f'Joined {len(left_rows)} rows with {len(right_rows)} rows = {len(joined_rows)} rows'
+                'columns': columns,
+                'count': len(joined_rows),
+                'message': f'INNER JOIN: {len(left_rows)} × {len(right_rows)} → {len(joined_rows)} rows'
             }
             
         except Exception as e:
+            logger.error(f"JOIN execution error: {str(e)}", exc_info=True)
             return {'error': f'JOIN execution error: {str(e)}'}
-    
+
+    def _merge_rows(self, left_row: Dict, right_row: Dict, right_table: str, selected_columns: List[str]) -> Dict:
+        """Merge rows from two tables, handling column name conflicts"""
+        merged = {}
+        
+        # Add left table columns
+        for key, value in left_row.items():
+            merged[key] = value
+        
+        # Add right table columns
+        for key, value in right_row.items():
+            new_key = key
+            
+            # Check for column name conflict
+            if key in merged:
+                # Add table prefix to avoid conflict
+                new_key = f"{right_table}_{key}"
+            
+            merged[new_key] = value
+        
+        # If specific columns were selected, filter to only those
+        if selected_columns and selected_columns != ['*']:
+            filtered = {}
+            for col in selected_columns:
+                # Handle table.column syntax
+                if '.' in col:
+                    table_part, col_part = col.split('.')
+                    # Check if this column exists in our merged row
+                    if col_part in merged:
+                        filtered[col] = merged[col_part]
+                    elif f"{table_part}_{col_part}" in merged:
+                        filtered[col] = merged[f"{table_part}_{col_part}"]
+                elif col in merged:
+                    filtered[col] = merged[col]
+            
+            # Also include columns without table prefix if they match
+            for key, value in merged.items():
+                if '_' in key:
+                    col_part = key.split('_', 1)[1]
+                    if col_part in selected_columns and col_part not in filtered:
+                        filtered[col_part] = value
+            
+            return filtered
+        
+        return merged
     def _apply_where(self, rows: List[Dict], where_clause: str) -> List[Dict]:
-        """Apply WHERE clause filtering"""
+        """Apply WHERE clause filtering with smart type handling"""
         if not where_clause:
             return rows
         
-        filtered = []
+        # Parse WHERE clause
+        operators = ['!=', '>=', '<=', '=', '>', '<']  # Order matters for multi-char operators
+        op_found = None
+        col = None
+        value = None
         
-        # Simple WHERE parsing for basic operators
-        operators = ['=', '!=', '>', '<', '>=', '<=']
         for op in operators:
             if op in where_clause:
                 parts = where_clause.split(op)
                 if len(parts) == 2:
                     col = parts[0].strip()
-                    value = parts[1].strip().strip("'\"")
+                    raw_value = parts[1].strip()
+                    # Remove quotes if present
+                    if (raw_value.startswith("'") and raw_value.endswith("'")) or \
+                    (raw_value.startswith('"') and raw_value.endswith('"')):
+                        value = raw_value[1:-1]
+                    else:
+                        value = raw_value
+                    op_found = op
+                    break
+        
+        if not op_found or not col:
+            return rows  # No valid operator found
+        
+        filtered = []
+        
+        for row in rows:
+            row_value = row.get(col)
+            
+            # Skip if row doesn't have this column
+            if col not in row:
+                continue
+            
+            # Smart comparison based on data types
+            try:
+                # Try numeric comparison
+                num_row = float(row_value) if row_value is not None else None
+                num_val = float(value) if value is not None else None
+                
+                if num_row is not None and num_val is not None:
+                    # Numeric comparison
+                    if op_found == '=' and num_row == num_val:
+                        filtered.append(row)
+                    elif op_found == '!=' and num_row != num_val:
+                        filtered.append(row)
+                    elif op_found == '>' and num_row > num_val:
+                        filtered.append(row)
+                    elif op_found == '<' and num_row < num_val:
+                        filtered.append(row)
+                    elif op_found == '>=' and num_row >= num_val:
+                        filtered.append(row)
+                    elif op_found == '<=' and num_row <= num_val:
+                        filtered.append(row)
+                else:
+                    # Fall back to string comparison
+                    str_row = str(row_value) if row_value is not None else ''
+                    str_val = str(value) if value is not None else ''
                     
-                    # Try to convert value based on operator context
-                    try:
-                        if '.' in value:
-                            value = float(value)
-                        else:
-                            value = int(value)
-                    except:
-                        pass  # Keep as string
-                    
-                    for row in rows:
-                        row_value = row.get(col)
+                    if op_found == '=' and str_row == str_val:
+                        filtered.append(row)
+                    elif op_found == '!=' and str_row != str_val:
+                        filtered.append(row)
+                    elif op_found == '>' and str_row > str_val:
+                        filtered.append(row)
+                    elif op_found == '<' and str_row < str_val:
+                        filtered.append(row)
+                    elif op_found == '>=' and str_row >= str_val:
+                        filtered.append(row)
+                    elif op_found == '<=' and str_row <= str_val:
+                        filtered.append(row)
                         
-                        if op == '=' and row_value == value:
-                            filtered.append(row)
-                        elif op == '!=' and row_value != value:
-                            filtered.append(row)
-                        elif op == '>' and row_value is not None and value is not None:
-                            try:
-                                if row_value > value:
-                                    filtered.append(row)
-                            except:
-                                pass
-                        elif op == '<' and row_value is not None and value is not None:
-                            try:
-                                if row_value < value:
-                                    filtered.append(row)
-                            except:
-                                pass
-                        elif op == '>=' and row_value is not None and value is not None:
-                            try:
-                                if row_value >= value:
-                                    filtered.append(row)
-                            except:
-                                pass
-                        elif op == '<=' and row_value is not None and value is not None:
-                            try:
-                                if row_value <= value:
-                                    filtered.append(row)
-                            except:
-                                pass
-                    
-                    return filtered
+            except (ValueError, TypeError):
+                # Last resort: string comparison
+                str_row = str(row_value) if row_value is not None else ''
+                str_val = str(value) if value is not None else ''
+                
+                if op_found == '=' and str_row == str_val:
+                    filtered.append(row)
+                elif op_found == '!=' and str_row != str_val:
+                    filtered.append(row)
+        
+        return filtered
         
         # If no operator found, return original rows
         return rows
@@ -410,50 +554,197 @@ class QueryExecutor:
             return rows  # Return unsorted if error
     
     def _execute_update(self, query: UpdateQuery) -> Dict[str, Any]:
-        """Execute UPDATE"""
+        """Execute UPDATE with detailed debugging"""
         try:
-            # Get all rows
+            print(f"\n=== DEBUG UPDATE START ===")
+            print(f"Database: {self.db_name}, Table: {query.table_name}")
+            print(f"WHERE: {query.where_clause}")
+            print(f"SET: {query.set_clause}")
+            
+            # 1. Get current rows
             rows = self.storage.get_all_rows(self.db_name, query.table_name)
+            print(f"DEBUG: Retrieved {len(rows)} rows from storage")
+            
+            if rows:
+                print(f"DEBUG: First row before update: {rows[0]}")
+            
             if not rows:
-                return {'message': '0 rows updated', 'count': 0}
+                print("DEBUG: No rows found")
+                return {
+                    'success': True,
+                    'message': '0 rows updated',
+                    'count': 0,
+                    'columns': [],
+                    'data': []
+                }
             
-            # Apply updates
-            updated_rows = []
+            # 2. Make a DEEP COPY to track changes
+            import copy
+            rows_before = copy.deepcopy(rows)
+            
+            # 3. Apply updates
             updated_count = 0
+            updated_indices = []
             
-            for row in rows:
-                # Check WHERE clause
+            for i, row in enumerate(rows):
+                should_update = True
+                
                 if query.where_clause:
-                    # Simple WHERE evaluation
                     if '=' in query.where_clause:
                         col, value = query.where_clause.split('=', 1)
                         col = col.strip()
                         value = value.strip().strip("'\"")
-                        if str(row.get(col, '')) != value:
-                            updated_rows.append(row)
-                            continue
+                        
+                        row_value = str(row.get(col, ''))
+                        print(f"DEBUG: Row {i} - WHERE check: {col} = {value} vs row value: {row_value}")
+                        
+                        if row_value != value:
+                            should_update = False
+                            print(f"DEBUG: Row {i} doesn't match WHERE, skipping")
                 
-                # Update row
-                for col, new_value in query.set_clause.items():
-                    row[col] = new_value
-                
-                updated_rows.append(row)
-                updated_count += 1
+                if should_update:
+                    print(f"DEBUG: Row {i} matches WHERE, updating...")
+                    print(f"DEBUG: Before update: {row}")
+                    
+                    for col, new_value in query.set_clause.items():
+                        old_value = row.get(col)
+                        row[col] = new_value
+                        print(f"DEBUG:   Changed {col}: {old_value} -> {new_value}")
+                    
+                    updated_count += 1
+                    updated_indices.append(i)
+                    print(f"DEBUG: After update: {row}")
             
-            # Save updated rows
+            print(f"DEBUG: Total rows to update: {updated_count}")
+            print(f"DEBUG: Updated indices: {updated_indices}")
+            
+            # 4. Verify changes were made in memory
             if updated_count > 0:
-                # Note: This is a simplified implementation
-                # In production, would update in place
-                pass
+                print("\nDEBUG: Verifying in-memory changes:")
+                for i in updated_indices:
+                    print(f"Row {i} before: {rows_before[i]}")
+                    print(f"Row {i} after:  {rows[i]}")
+                    print(f"Changed: {rows_before[i] != rows[i]}")
+            
+            # 5. Save back to storage
+            if updated_count > 0:
+                print(f"\nDEBUG: Attempting to save {len(rows)} rows...")
+                
+                # Check what save methods are available
+                storage_methods = [m for m in dir(self.storage) if 'save' in m.lower() and not m.startswith('_')]
+                print(f"DEBUG: Available save methods: {storage_methods}")
+                
+                saved = False
+                
+                # Try save_all_rows
+                if 'save_all_rows' in storage_methods:
+                    print("DEBUG: Trying save_all_rows...")
+                    try:
+                        result = self.storage.save_all_rows(self.db_name, query.table_name, rows)
+                        saved = True
+                        print(f"DEBUG: save_all_rows returned: {result}")
+                    except Exception as e:
+                        print(f"DEBUG: save_all_rows failed: {e}")
+                
+                # Try save_rows
+                if not saved and 'save_rows' in storage_methods:
+                    print("DEBUG: Trying save_rows...")
+                    try:
+                        result = self.storage.save_rows(self.db_name, query.table_name, rows)
+                        saved = True
+                        print(f"DEBUG: save_rows returned: {result}")
+                    except Exception as e:
+                        print(f"DEBUG: save_rows failed: {e}")
+                
+                # Try to find and call ANY save method
+                if not saved and storage_methods:
+                    print(f"DEBUG: Trying other save methods...")
+                    for method_name in storage_methods:
+                        try:
+                            method = getattr(self.storage, method_name)
+                            # Check if it takes appropriate parameters
+                            import inspect
+                            params = inspect.signature(method).parameters
+                            if len(params) >= 3:  # Should take db_name, table_name, data
+                                print(f"DEBUG: Calling {method_name}...")
+                                result = method(self.db_name, query.table_name, rows)
+                                saved = True
+                                print(f"DEBUG: {method_name} returned: {result}")
+                                break
+                        except Exception as e:
+                            print(f"DEBUG: {method_name} failed: {e}")
+                
+                # Last resort: direct file writing
+                if not saved:
+                    print("DEBUG: All save methods failed, trying direct file write...")
+                    try:
+                        # Try to find where data is stored
+                        import json
+                        import os
+                        
+                        # Common data locations
+                        possible_dirs = [
+                            "data", "databases", "db", "storage",
+                            os.path.join(os.getcwd(), "data"),
+                            os.path.join(os.getcwd(), "databases"),
+                        ]
+                        
+                        for data_dir in possible_dirs:
+                            filepath = os.path.join(data_dir, self.db_name, f"{query.table_name}.json")
+                            print(f"DEBUG: Trying path: {filepath}")
+                            
+                            if os.path.exists(os.path.dirname(filepath)):
+                                # Write the file
+                                os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                                with open(filepath, 'w') as f:
+                                    json.dump(rows, f, indent=2)
+                                
+                                saved = True
+                                print(f"DEBUG: Direct write succeeded to {filepath}")
+                                
+                                # Verify
+                                with open(filepath, 'r') as f:
+                                    verify_data = json.load(f)
+                                print(f"DEBUG: Verified {len(verify_data)} rows written")
+                                break
+                    except Exception as e:
+                        print(f"DEBUG: Direct write failed: {e}")
+                
+                if not saved:
+                    print("ERROR: Could not save data by any method!")
+                    return {
+                        'success': False,
+                        'error': 'Failed to save updated data',
+                        'message': f'Updated {updated_count} rows but could not save changes',
+                        'count': updated_count
+                    }
+                else:
+                    print("DEBUG: Data saved successfully")
+            else:
+                print("DEBUG: No rows needed updating")
+            
+            print(f"=== DEBUG UPDATE END ===\n")
             
             return {
+                'success': True,
                 'message': f'{updated_count} row(s) updated',
-                'count': updated_count
+                'count': updated_count,
+                'columns': [],
+                'data': [],
+                'row_count': updated_count
             }
             
         except Exception as e:
-            return {'error': f'Error updating: {str(e)}'}
-    
+            print(f"UPDATE ERROR: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            return {
+                'success': False,
+                'error': f'Error updating: {str(e)}',
+                'message': f'Update failed: {str(e)}'
+            }
+            
     def _execute_delete(self, query: DeleteQuery) -> Dict[str, Any]:
         """Execute DELETE"""
         try:
